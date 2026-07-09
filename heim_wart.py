@@ -47,7 +47,7 @@ class Datenbank:
                 name TEXT NOT NULL,
                 kaufdatum TEXT NOT NULL,
                 garantie_monate INTEGER NOT NULL,
-                wartungsintervall_monate INTEGER NOT NULL,
+                wartungsintervall_monate INTEGER DEFAULT 0 NOT NULL,
                 kategorie_id INTEGER NOT NULL,
                 FOREIGN KEY (kategorie_id) REFERENCES kategorien(id) ON DELETE RESTRICT
             );
@@ -249,11 +249,15 @@ class Datenbank:
 
     # ----- Fälligkeitsberechnung -----
     def berechne_faelligkeit(self, geraet_id):
-        """Berechnet das nächste Fälligkeitsdatum für ein Gerät."""
+        """Berechnet das nächste Fälligkeitsdatum für ein Gerät.
+        Liefert None, wenn kein Wartungsintervall definiert ist (Intervall = 0)."""
         geraet = self.get_geraet_by_id(geraet_id)
         if not geraet:
             return None
         _, name, kaufdatum_str, _, intervall, _ = geraet
+        if intervall is None or intervall == 0:
+            return None  # Kein Intervall festgelegt
+
         kaufdatum = datetime.strptime(kaufdatum_str, "%Y-%m-%d").date()
 
         # Alle Wartungen (nicht Reparaturen) laden, nach Datum absteigend
@@ -274,10 +278,10 @@ class Datenbank:
         return faellig
 
     def get_status(self, geraet_id):
-        """Gibt Status-String und Farbcode zurück: ('In Ordnung', 'green'), ('Bald fällig', 'orange'), ('Überfällig', 'red')."""
+        """Gibt Status-String und Farbcode zurück."""
         faellig = self.berechne_faelligkeit(geraet_id)
         if faellig is None:
-            return "Unbekannt", "gray"
+            return "Kein Intervall", "gray"
         heute = date.today()
         if faellig < heute:
             return "Überfällig", "red"
@@ -380,7 +384,7 @@ class GeraetDialog(tk.Toplevel):
         self.name_var = tk.StringVar()
         self.kaufdatum_var = tk.StringVar(value=date.today().isoformat())
         self.garantie_var = tk.IntVar(value=24)
-        self.intervall_var = tk.IntVar(value=12)
+        self.intervall_var = tk.IntVar(value=0)  # 0 = kein Intervall
         self.kategorie_id_var = tk.IntVar()
 
         # Kategorien laden
@@ -424,11 +428,12 @@ class GeraetDialog(tk.Toplevel):
             self, from_=0, to=240, textvariable=self.garantie_var, width=8
         ).grid(row=3, column=1, sticky=tk.W, padx=10, pady=5)
 
-        ttk.Label(self, text="Wartungsintervall (Monate) *:").grid(
+        # Wartungsintervall jetzt optional (0 = kein Intervall)
+        ttk.Label(self, text="Wartungsintervall (Monate, optional):").grid(
             row=4, column=0, sticky=tk.W, padx=10, pady=5
         )
         ttk.Spinbox(
-            self, from_=1, to=120, textvariable=self.intervall_var, width=8
+            self, from_=0, to=120, textvariable=self.intervall_var, width=8
         ).grid(row=4, column=1, sticky=tk.W, padx=10, pady=5)
 
         # Vorbelegung, falls Bearbeiten
@@ -479,14 +484,7 @@ class GeraetDialog(tk.Toplevel):
             return
 
         garantie = self.garantie_var.get()
-        intervall = self.intervall_var.get()
-        if intervall < 1:
-            messagebox.showwarning(
-                "Intervall",
-                "Das Wartungsintervall muss mindestens 1 Monat betragen.",
-                parent=self,
-            )
-            return
+        intervall = self.intervall_var.get()  # 0 = kein Intervall
 
         # Kategorie-ID aus Combobox ermitteln
         selected_idx = self.cat_combo.current()
@@ -659,7 +657,7 @@ class DetailDialog(tk.Toplevel):
         ).pack(anchor=tk.W)
         ttk.Label(
             info_frame,
-            text=f"Kategorie: {kat_name}  |  Kaufdatum: {kaufdatum}  |  Wartungsintervall: {intervall} Monate",
+            text=f"Kategorie: {kat_name}  |  Kaufdatum: {kaufdatum}  |  Wartungsintervall: {intervall if intervall else 'keins'}",
         ).pack(anchor=tk.W)
 
         # Historie Treeview
@@ -720,8 +718,8 @@ class MainApp:
         self.root = root
         self.db = db
         self.root.title("HeimWart – Geräteverwaltung")
-        self.root.geometry("800x500")
-        self.root.minsize(600, 400)
+        self.root.geometry("800x550")
+        self.root.minsize(600, 450)
 
         # Menüleiste
         menubar = tk.Menu(root)
@@ -763,6 +761,37 @@ class MainApp:
             command=self.refresh_dashboard,
         ).pack(side=tk.LEFT, padx=2)
 
+        # --- Filterleiste (Such- und Kategoriefilter) ---
+        filter_frame = ttk.Frame(root)
+        filter_frame.pack(fill=tk.X, padx=10, pady=(5, 0))
+
+        ttk.Label(filter_frame, text="Filter:").pack(side=tk.LEFT)
+        self.filter_category_var = tk.StringVar()
+        self.filter_category_combo = ttk.Combobox(
+            filter_frame,
+            textvariable=self.filter_category_var,
+            state="readonly",
+            width=18,
+        )
+        self.filter_category_combo.pack(side=tk.LEFT, padx=5)
+        self.filter_category_combo.bind(
+            "<<ComboboxSelected>>", lambda e: self.refresh_dashboard()
+        )
+
+        ttk.Label(filter_frame, text="Suche:").pack(side=tk.LEFT, padx=(10, 0))
+        self.filter_search_var = tk.StringVar()
+        self.filter_search_entry = ttk.Entry(
+            filter_frame, textvariable=self.filter_search_var, width=20
+        )
+        self.filter_search_entry.pack(side=tk.LEFT, padx=5)
+        self.filter_search_entry.bind(
+            "<KeyRelease>", lambda e: self.refresh_dashboard()
+        )
+
+        # initialen Kategoriefilter befüllen
+        self.kategorien_liste = []  # wird in update_category_filter() gesetzt
+        self.update_category_filter()
+
         # Dashboard als Treeview mit farbigen Status-Zeilen
         self.columns = ("Gerät", "Kategorie", "Nächste Wartung", "Status")
         self.tree = ttk.Treeview(
@@ -784,23 +813,53 @@ class MainApp:
         self.tree.tag_configure("red", background="#f8d7da")  # hellrot
         self.tree.tag_configure("orange", background="#fff3cd")  # gelb
         self.tree.tag_configure("green", background="#d4edda")  # grün
+        self.tree.tag_configure("gray", background="#e2e3e5")  # grau für "Kein Intervall"
 
         # Doppelklick öffnet Detailansicht
         self.tree.bind("<Double-1>", self.on_double_click)
 
         self.refresh_dashboard()
 
+    def update_category_filter(self):
+        """Aktualisiert die Kategorienliste im Dropdown-Filter."""
+        kats = self.db.get_categories()
+        self.kategorien_liste = kats
+        werte = ["Alle Kategorien"] + [name for _, name in kats]
+        aktuell = self.filter_category_var.get()
+        self.filter_category_combo["values"] = werte
+        if aktuell in werte:
+            self.filter_category_var.set(aktuell)
+        else:
+            self.filter_category_var.set("Alle Kategorien")
+
     def refresh_dashboard(self):
-        """Liest alle Geräte aus der DB und aktualisiert die Dashboard-Liste."""
+        """Liest alle Geräte aus der DB, wendet Filter an und aktualisiert die Dashboard-Liste."""
         for row in self.tree.get_children():
             self.tree.delete(row)
 
         geraete = self.db.get_all_geraete()
+
+        # 1) Kategoriefilter
+        selected_cat = self.filter_category_var.get()
+        if selected_cat and selected_cat != "Alle Kategorien":
+            # ID der gewählten Kategorie finden
+            kat_id = None
+            for cid, cname in self.kategorien_liste:
+                if cname == selected_cat:
+                    kat_id = cid
+                    break
+            if kat_id is not None:
+                geraete = [g for g in geraete if g[6] == kat_id]  # g[6] = kategorie_id
+
+        # 2) Textsuche (Gerätename)
+        search_text = self.filter_search_var.get().strip().lower()
+        if search_text:
+            geraete = [g for g in geraete if search_text in g[1].lower()]  # g[1] = name
+
         for g in geraete:
             gid, name, kat_name, kaufdatum, garantie, intervall, kat_id = g
-            # Nächste Wartung berechnen
             faellig = self.db.berechne_faelligkeit(gid)
-            faellig_str = faellig.isoformat() if faellig else "?"
+            faellig_str = faellig.isoformat() if faellig else "—"
             status_text, color = self.db.get_status(gid)
 
             tag = color  # 'red', 'orange', 'green'
@@ -874,6 +933,9 @@ class MainApp:
 
     def open_kategorie_dialog(self):
         KategorieDialog(self.root, self.db)
+        # Nach dem Schließen des Dialogs den Filter aktualisieren, 
+        # falls Kategorien hinzugefügt oder gelöscht wurden.
+        self.update_category_filter()
 
     def show_about(self):
         messagebox.showinfo(

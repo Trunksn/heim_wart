@@ -62,6 +62,13 @@ class Datenbank:
             );
         """
         )
+        # Falls die Tabelle bereits existiert, aber die Spalte 'anschaffungskosten' fehlt,
+        # wird sie nachträglich hinzugefügt (Standard 0.0).
+        try:
+            self.cursor.execute("ALTER TABLE geraete ADD COLUMN anschaffungskosten REAL NOT NULL DEFAULT 0.0")
+        except sqlite3.OperationalError:
+            pass  # Spalte existiert bereits
+
         self.connection.commit()
 
     def init_default_categories(self):
@@ -94,13 +101,14 @@ class Datenbank:
         kid = kat_map.get("Haushalt", 1)  # Fallback
 
         heute = date.today()
-        # Muster-Geräte
+        # Muster-Geräte (name, kaufdatum, garantie, intervall, kategorie_id, anschaffungskosten)
         g1 = (
             "Waschmaschine",
             (heute - timedelta(days=400)).isoformat(),
             24,
             12,
             kid,
+            0.0,
         )
         g2 = (
             "Gas-Heizung",
@@ -108,6 +116,7 @@ class Datenbank:
             60,
             12,
             kat_map.get("Heizungskeller", kid),
+            0.0,
         )
         g3 = (
             "Kaffeevollautomat",
@@ -115,17 +124,18 @@ class Datenbank:
             12,
             6,
             kat_map.get("Küche", kid),
+            0.0,
         )
         self.cursor.execute(
-            "INSERT INTO geraete (name, kaufdatum, garantie_monate, wartungsintervall_monate, kategorie_id) VALUES (?,?,?,?,?)",
+            "INSERT INTO geraete (name, kaufdatum, garantie_monate, wartungsintervall_monate, kategorie_id, anschaffungskosten) VALUES (?,?,?,?,?,?)",
             g1,
         )
         self.cursor.execute(
-            "INSERT INTO geraete (name, kaufdatum, garantie_monate, wartungsintervall_monate, kategorie_id) VALUES (?,?,?,?,?)",
+            "INSERT INTO geraete (name, kaufdatum, garantie_monate, wartungsintervall_monate, kategorie_id, anschaffungskosten) VALUES (?,?,?,?,?,?)",
             g2,
         )
         self.cursor.execute(
-            "INSERT INTO geraete (name, kaufdatum, garantie_monate, wartungsintervall_monate, kategorie_id) VALUES (?,?,?,?,?)",
+            "INSERT INTO geraete (name, kaufdatum, garantie_monate, wartungsintervall_monate, kategorie_id, anschaffungskosten) VALUES (?,?,?,?,?,?)",
             g3,
         )
         self.connection.commit()
@@ -179,11 +189,11 @@ class Datenbank:
 
     # ----- Geräte -----
     def add_geraet(
-        self, name, kaufdatum, garantie_monate, intervall_monate, kategorie_id
+        self, name, kaufdatum, garantie_monate, intervall_monate, kategorie_id, anschaffungskosten=0.0
     ):
         self.cursor.execute(
-            "INSERT INTO geraete (name, kaufdatum, garantie_monate, wartungsintervall_monate, kategorie_id) VALUES (?,?,?,?,?)",
-            (name, kaufdatum, garantie_monate, intervall_monate, kategorie_id),
+            "INSERT INTO geraete (name, kaufdatum, garantie_monate, wartungsintervall_monate, kategorie_id, anschaffungskosten) VALUES (?,?,?,?,?,?)",
+            (name, kaufdatum, garantie_monate, intervall_monate, kategorie_id, anschaffungskosten),
         )
         self.connection.commit()
         return self.cursor.lastrowid
@@ -196,15 +206,17 @@ class Datenbank:
         garantie_monate,
         intervall_monate,
         kategorie_id,
+        anschaffungskosten=0.0,
     ):
         self.cursor.execute(
-            "UPDATE geraete SET name=?, kaufdatum=?, garantie_monate=?, wartungsintervall_monate=?, kategorie_id=? WHERE id=?",
+            "UPDATE geraete SET name=?, kaufdatum=?, garantie_monate=?, wartungsintervall_monate=?, kategorie_id=?, anschaffungskosten=? WHERE id=?",
             (
                 name,
                 kaufdatum,
                 garantie_monate,
                 intervall_monate,
                 kategorie_id,
+                anschaffungskosten,
                 geraet_id,
             ),
         )
@@ -227,7 +239,7 @@ class Datenbank:
 
     def get_geraet_by_id(self, geraet_id):
         self.cursor.execute(
-            "SELECT id, name, kaufdatum, garantie_monate, wartungsintervall_monate, kategorie_id FROM geraete WHERE id=?",
+            "SELECT id, name, kaufdatum, garantie_monate, wartungsintervall_monate, kategorie_id, anschaffungskosten FROM geraete WHERE id=?",
             (geraet_id,),
         )
         return self.cursor.fetchone()
@@ -254,7 +266,8 @@ class Datenbank:
         geraet = self.get_geraet_by_id(geraet_id)
         if not geraet:
             return None
-        _, name, kaufdatum_str, _, intervall, _ = geraet
+        # Entpacken mit neuer Spaltenstruktur (id, name, kaufdatum, garantie, intervall, kategorie_id, anschaffungskosten)
+        _, name, kaufdatum_str, _, intervall, _, _ = geraet
         if intervall is None or intervall == 0:
             return None  # Kein Intervall festgelegt
 
@@ -377,7 +390,7 @@ class GeraetDialog(tk.Toplevel):
             self.title("Gerät bearbeiten")
         else:
             self.title("Neues Gerät anlegen")
-        self.geometry("400x320")
+        self.geometry("400x380")  # etwas höher für das neue Feld
         self.resizable(False, False)
 
         # Variablen
@@ -386,6 +399,7 @@ class GeraetDialog(tk.Toplevel):
         self.garantie_var = tk.IntVar(value=24)
         self.intervall_var = tk.IntVar(value=0)  # 0 = kein Intervall
         self.kategorie_id_var = tk.IntVar()
+        self.anschaffungskosten_var = tk.DoubleVar(value=0.0)
 
         # Kategorien laden
         self.kategorien = self.db.get_categories()
@@ -436,14 +450,23 @@ class GeraetDialog(tk.Toplevel):
             self, from_=0, to=120, textvariable=self.intervall_var, width=8
         ).grid(row=4, column=1, sticky=tk.W, padx=10, pady=5)
 
+        ttk.Label(self, text="Anschaffungskosten (€):").grid(
+            row=5, column=0, sticky=tk.W, padx=10, pady=5
+        )
+        ttk.Entry(self, textvariable=self.anschaffungskosten_var, width=10).grid(
+            row=5, column=1, sticky=tk.W, padx=10, pady=5
+        )
+
         # Vorbelegung, falls Bearbeiten
         if geraet_id:
             geraet = self.db.get_geraet_by_id(geraet_id)
             if geraet:
+                # geraet = (id, name, kaufdatum, garantie, intervall, kategorie_id, anschaffungskosten)
                 self.name_var.set(geraet[1])
                 self.kaufdatum_var.set(geraet[2])
                 self.garantie_var.set(geraet[3])
                 self.intervall_var.set(geraet[4])
+                self.anschaffungskosten_var.set(geraet[6])
                 # passende Kategorie auswählen
                 for idx, (cid, name) in enumerate(self.kategorien):
                     if cid == geraet[5]:
@@ -452,7 +475,7 @@ class GeraetDialog(tk.Toplevel):
 
         # Buttons
         btn_frame = ttk.Frame(self)
-        btn_frame.grid(row=5, column=0, columnspan=2, pady=20)
+        btn_frame.grid(row=6, column=0, columnspan=2, pady=20)
         ttk.Button(btn_frame, text="Speichern", command=self.save).pack(
             side=tk.LEFT, padx=10
         )
@@ -485,6 +508,7 @@ class GeraetDialog(tk.Toplevel):
 
         garantie = self.garantie_var.get()
         intervall = self.intervall_var.get()  # 0 = kein Intervall
+        anschaffung = self.anschaffungskosten_var.get()
 
         # Kategorie-ID aus Combobox ermitteln
         selected_idx = self.cat_combo.current()
@@ -505,10 +529,11 @@ class GeraetDialog(tk.Toplevel):
                 garantie,
                 intervall,
                 kat_id,
+                anschaffung,
             )
         else:
             self.db.add_geraet(
-                name, kaufdatum_str, garantie, intervall, kat_id
+                name, kaufdatum_str, garantie, intervall, kat_id, anschaffung
             )
 
         self.result = True
@@ -634,12 +659,14 @@ class DetailDialog(tk.Toplevel):
             self.destroy()
             return
 
-        name, kaufdatum, _, intervall, kat_id = (
+        # geraet = (id, name, kaufdatum, garantie, intervall, kategorie_id, anschaffungskosten)
+        name, kaufdatum, garantie, intervall, kat_id, anschaffung = (
             geraet[1],
             geraet[2],
             geraet[3],
             geraet[4],
             geraet[5],
+            geraet[6],
         )
         # Kategorienamen ermitteln
         kat_name = ""
@@ -657,7 +684,7 @@ class DetailDialog(tk.Toplevel):
         ).pack(anchor=tk.W)
         ttk.Label(
             info_frame,
-            text=f"Kategorie: {kat_name}  |  Kaufdatum: {kaufdatum}  |  Wartungsintervall: {intervall if intervall else 'keins'}",
+            text=f"Kategorie: {kat_name}  |  Kaufdatum: {kaufdatum}  |  Wartungsintervall: {intervall if intervall else 'keins'}  |  Anschaffung: {anschaffung:.2f} €",
         ).pack(anchor=tk.W)
 
         # Historie Treeview

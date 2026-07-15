@@ -697,11 +697,6 @@ class DetailDialog(tk.Toplevel):
             self.tree.column(col, width=130 if col != "Beschreibung" else 200)
         self.tree.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
 
-        # Scrollbar
-        vsb = ttk.Scrollbar(self, orient=tk.VERTICAL, command=self.tree.yview)
-        self.tree.configure(yscrollcommand=vsb.set)
-        vsb.pack(side=tk.RIGHT, fill=tk.Y)
-
         self.refresh_history()
 
         btn_frame = ttk.Frame(self)
@@ -830,11 +825,6 @@ class MainApp:
                 col, width=150 if col != "Nächste Wartung" else 170
             )
         self.tree.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-
-        # Scrollbar
-        vsb = ttk.Scrollbar(root, orient=tk.VERTICAL, command=self.tree.yview)
-        self.tree.configure(yscrollcommand=vsb.set)
-        vsb.pack(side=tk.RIGHT, fill=tk.Y)
 
         # Tags für die Statusfarben
         self.tree.tag_configure("red", background="#f8d7da")  # hellrot

@@ -438,24 +438,25 @@ class GeraetDialog(tk.Toplevel):
         ttk.Label(self, text="Garantie (Monate):").grid(
             row=3, column=0, sticky=tk.W, padx=10, pady=5
         )
-        ttk.Spinbox(
+        self.garantie_spin = ttk.Spinbox(
             self, from_=0, to=240, textvariable=self.garantie_var, width=8
-        ).grid(row=3, column=1, sticky=tk.W, padx=10, pady=5)
+        )
+        self.garantie_spin.grid(row=3, column=1, sticky=tk.W, padx=10, pady=5)
 
         # Wartungsintervall jetzt optional (0 = kein Intervall)
         ttk.Label(self, text="Wartungsintervall (Monate, optional):").grid(
             row=4, column=0, sticky=tk.W, padx=10, pady=5
         )
-        ttk.Spinbox(
+        self.intervall_spin = ttk.Spinbox(
             self, from_=0, to=120, textvariable=self.intervall_var, width=8
-        ).grid(row=4, column=1, sticky=tk.W, padx=10, pady=5)
+        )
+        self.intervall_spin.grid(row=4, column=1, sticky=tk.W, padx=10, pady=5)
 
         ttk.Label(self, text="Anschaffungskosten (€):").grid(
             row=5, column=0, sticky=tk.W, padx=10, pady=5
         )
-        ttk.Entry(self, textvariable=self.anschaffungskosten_var, width=10).grid(
-            row=5, column=1, sticky=tk.W, padx=10, pady=5
-        )
+        self.anschaffungskosten_entry = ttk.Entry(self, textvariable=self.anschaffungskosten_var, width=10)
+        self.anschaffungskosten_entry.grid(row=5, column=1, sticky=tk.W, padx=10, pady=5)
 
         # Vorbelegung, falls Bearbeiten
         if geraet_id:
@@ -506,9 +507,41 @@ class GeraetDialog(tk.Toplevel):
             )
             return
 
-        garantie = self.garantie_var.get()
-        intervall = self.intervall_var.get()  # 0 = kein Intervall
-        anschaffung = self.anschaffungskosten_var.get()
+        # Validierung Garantie (nur Ganzzahl)
+        garantie_text = self.garantie_spin.get().strip()
+        if not garantie_text.isdigit():
+            messagebox.showwarning(
+                "Ungültige Eingabe",
+                "Garantie muss eine ganze Zahl sein.",
+                parent=self,
+            )
+            return
+        garantie = int(garantie_text)
+
+        # Validierung Wartungsintervall (nur Ganzzahl)
+        intervall_text = self.intervall_spin.get().strip()
+        if not intervall_text.isdigit():
+            messagebox.showwarning(
+                "Ungültige Eingabe",
+                "Wartungsintervall muss eine ganze Zahl sein.",
+                parent=self,
+            )
+            return
+        intervall = int(intervall_text)
+
+        # Validierung der Anschaffungskosten (nur Zahlen erlaubt)
+        anschaffung_str = self.anschaffungskosten_entry.get().strip()
+        if not anschaffung_str:
+            anschaffung_str = "0"
+        try:
+            anschaffung = float(anschaffung_str)
+        except ValueError:
+            messagebox.showwarning(
+                "Ungültige Eingabe",
+                "Anschaffungskosten müssen eine Zahl sein.",
+                parent=self,
+            )
+            return
 
         # Kategorie-ID aus Combobox ermitteln
         selected_idx = self.cat_combo.current()
@@ -591,9 +624,8 @@ class ServiceDialog(tk.Toplevel):
             row=3, column=0, sticky=tk.W, padx=10, pady=5
         )
         self.kosten_var = tk.DoubleVar(value=0.0)
-        ttk.Entry(self, textvariable=self.kosten_var, width=10).grid(
-            row=3, column=1, sticky=tk.W, padx=10, pady=5
-        )
+        self.kosten_entry = ttk.Entry(self, textvariable=self.kosten_var, width=10)
+        self.kosten_entry.grid(row=3, column=1, sticky=tk.W, padx=10, pady=5)
 
         # Buttons
         btn_frame = ttk.Frame(self)
@@ -612,9 +644,22 @@ class ServiceDialog(tk.Toplevel):
         datum_str = self.datum_var.get().strip()
         typ = self.typ_var.get()
         beschreibung = self.beschreibung_text.get("1.0", tk.END).strip()
-        kosten = self.kosten_var.get()
 
-        # Validierung
+        # Validierung der Kosten (nur Zahlen erlaubt)
+        kosten_str = self.kosten_entry.get().strip()
+        if not kosten_str:
+            kosten_str = "0"
+        try:
+            kosten = float(kosten_str)
+        except ValueError:
+            messagebox.showwarning(
+                "Ungültige Eingabe",
+                "Kosten müssen eine Zahl sein.",
+                parent=self,
+            )
+            return
+
+        # Validierung von Datum und Beschreibung
         if not datum_str or not beschreibung:
             messagebox.showwarning(
                 "Pflichtfelder",

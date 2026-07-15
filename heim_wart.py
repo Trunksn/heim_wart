@@ -901,6 +901,15 @@ class MainApp:
         if search_text:
             geraete = [g for g in geraete if search_text in g[1].lower()]  # g[1] = name
 
+        # Sortierung: nach nächster fälliger Wartung (früheste zuerst), Geräte ohne Intervall am Ende
+        def sort_key(g):
+            faellig = self.db.berechne_faelligkeit(g[0])  # g[0] = Geräte-ID
+            if faellig is None:
+                return (date.max, g[1].lower())   # date.max ganz nach hinten
+            else:
+                return (faellig, g[1].lower())
+        geraete.sort(key=sort_key)
+
         for g in geraete:
             gid, name, kat_name, kaufdatum, garantie, intervall, kat_id = g
             faellig = self.db.berechne_faelligkeit(gid)

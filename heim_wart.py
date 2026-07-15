@@ -846,6 +846,8 @@ class MainApp:
         self.tree.bind("<Double-1>", self.on_double_click)
 
         self.refresh_dashboard()
+        # Warnung beim Start, falls Geräte überfällig sind
+        self.warn_overdue()
 
     def update_category_filter(self):
         """Aktualisiert die Kategorienliste im Dropdown-Filter."""
@@ -858,6 +860,22 @@ class MainApp:
             self.filter_category_var.set(aktuell)
         else:
             self.filter_category_var.set("Alle Kategorien")
+
+    def warn_overdue(self):
+        """Prüft alle Geräte und zeigt ein einziges Popup mit allen überfälligen Wartungen an."""
+        geraete = self.db.get_all_geraete()
+        overdue = []
+        for g in geraete:
+            gid = g[0]
+            status_text, _ = self.db.get_status(gid)
+            if status_text == "Überfällig":
+                name = g[1]
+                faellig = self.db.berechne_faelligkeit(gid)
+                faellig_str = faellig.isoformat() if faellig else "?"
+                overdue.append(f"- {name} (fällig seit {faellig_str})")
+        if overdue:
+            msg = "Folgende Geräte sind überfällig:\n\n" + "\n".join(overdue)
+            messagebox.showwarning("Überfällige Wartungen", msg, parent=self.root)
 
     def refresh_dashboard(self):
         """Liest alle Geräte aus der DB, wendet Filter an und aktualisiert die Dashboard-Liste."""
@@ -889,14 +907,22 @@ class MainApp:
             faellig_str = faellig.isoformat() if faellig else "—"
             status_text, color = self.db.get_status(gid)
 
-            tag = color  # 'red', 'orange', 'green'
-            self.tree.insert(
-                "",
-                tk.END,
-                iid=str(gid),
-                values=(name, kat_name, faellig_str, status_text),
-                tags=(tag,),
-            )
+            # Geräte ohne Wartungsintervall erhalten keine Hintergrundfarbe
+            if color == "gray":
+                self.tree.insert(
+                    "",
+                    tk.END,
+                    iid=str(gid),
+                    values=(name, kat_name, faellig_str, status_text),
+                )
+            else:
+                self.tree.insert(
+                    "",
+                    tk.END,
+                    iid=str(gid),
+                    values=(name, kat_name, faellig_str, status_text),
+                    tags=(color,),
+                )
 
     def neues_geraet(self):
         dialog = GeraetDialog(self.root, self.db)

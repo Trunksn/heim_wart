@@ -49,6 +49,7 @@ class Datenbank:
                 garantie_monate INTEGER NOT NULL,
                 wartungsintervall_monate INTEGER DEFAULT 0 NOT NULL,
                 kategorie_id INTEGER NOT NULL,
+                anschaffungskosten REAL NOT NULL DEFAULT 0.0,
                 FOREIGN KEY (kategorie_id) REFERENCES kategorien(id) ON DELETE RESTRICT
             );
             CREATE TABLE IF NOT EXISTS service_eintraege (
@@ -62,13 +63,6 @@ class Datenbank:
             );
         """
         )
-        # Falls die Tabelle bereits existiert, aber die Spalte 'anschaffungskosten' fehlt,
-        # wird sie nachträglich hinzugefügt (Standard 0.0).
-        try:
-            self.cursor.execute("ALTER TABLE geraete ADD COLUMN anschaffungskosten REAL NOT NULL DEFAULT 0.0")
-        except sqlite3.OperationalError:
-            pass  # Spalte existiert bereits
-
         self.connection.commit()
 
     def init_default_categories(self):

@@ -24,6 +24,7 @@ def add_months(source_date, months):
 
 
 class Datenbank:
+    # NFA07: Datensicherheit/Persistenz (Einsatz der transaktionssicheren SQLite-Datenbank)
     def __init__(self, db_name="heim_wart.db"):
         self.connection = sqlite3.connect(db_name)
         self.connection.execute(
@@ -162,6 +163,7 @@ class Datenbank:
 
     def add_category(self, name):
         try:
+            # NFA08: Systemsicherheit (Schutz vor SQL-Injection durch parametrisierte Abfragen '?' statt F-Strings)
             self.cursor.execute(
                 "INSERT INTO kategorien (name) VALUES (?)", (name,)
             )
@@ -286,6 +288,7 @@ class Datenbank:
 
     def get_status(self, geraet_id):
         """Gibt Status-String und Farbcode zurück."""
+        # NFA04: Benutzerfreundlichkeit (Logik für das visuelle Ampelsystem)
         faellig = self.berechne_faelligkeit(geraet_id)
         if faellig is None:
             return "Kein Intervall", "gray"
@@ -484,6 +487,8 @@ class GeraetDialog(tk.Toplevel):
     def save(self):
         name = self.name_var.get().strip()
         kaufdatum_str = self.kaufdatum_var.get().strip()
+        
+        # NFA05: Fehlerbehandlung und Robustheit (Validierung auf Pflichtfelder via GUI)
         if not name or not kaufdatum_str:
             messagebox.showwarning(
                 "Pflichtfelder",
@@ -491,6 +496,8 @@ class GeraetDialog(tk.Toplevel):
                 parent=self,
             )
             return
+
+        # NFA05: Fehlerbehandlung und Robustheit (Abfangen eines Formatfehlers statt Programmabsturz)
         try:
             datetime.strptime(kaufdatum_str, "%Y-%m-%d")
         except ValueError:
@@ -661,6 +668,8 @@ class ServiceDialog(tk.Toplevel):
                 parent=self,
             )
             return
+        
+        # NFA05: Fehlerbehandlung (Logische Prüfung, ob Datum in der Zukunft liegt)
         try:
             datum = datetime.strptime(datum_str, "%Y-%m-%d").date()
             if datum > date.today():
@@ -772,6 +781,7 @@ class DetailDialog(tk.Toplevel):
                 self.master.refresh_dashboard()
 
 
+# NFA02: Plattformkompatibilität (Entwicklung einer nativen Desktopanwendung mit Tkinter)
 class MainApp:
     """Hauptfenster der Anwendung."""
 
@@ -780,6 +790,7 @@ class MainApp:
         self.db = db
         self.root.title("HeimWart – Geräteverwaltung")
         self.root.geometry("800x550")
+        # --- NFA06: GUI-Responsivität (Sicherstellung einer lesbaren Mindestgröße beim Resizing) ---
         self.root.minsize(600, 450)
 
         # Menüleiste
@@ -845,6 +856,8 @@ class MainApp:
             filter_frame, textvariable=self.filter_search_var, width=20
         )
         self.filter_search_entry.pack(side=tk.LEFT, padx=5)
+
+        # NFA06: GUI-Responsivität (Echtzeit-Verarbeitung: Dashboard aktualisiert sich verzögerungsfrei bei jedem Tastendruck)
         self.filter_search_entry.bind(
             "<KeyRelease>", lambda e: self.refresh_dashboard()
         )
@@ -865,7 +878,7 @@ class MainApp:
             )
         self.tree.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-        # Tags für die Statusfarben
+        # NFA04: Benutzerfreundlichkeit (Definition der Signalfarben für intuitive Bedienung)
         self.tree.tag_configure("red", background="#f8d7da")  # hellrot
         self.tree.tag_configure("orange", background="#fff3cd")  # gelb
         self.tree.tag_configure("green", background="#d4edda")  # grün
@@ -903,6 +916,7 @@ class MainApp:
                 faellig_str = faellig.isoformat() if faellig else "?"
                 overdue.append(f"- {name} (fällig seit {faellig_str})")
         if overdue:
+            # NFA04: Benutzerfreundlichkeit (Proaktive Benachrichtigung zur kognitiven Entlastung)
             msg = "Folgende Geräte sind überfällig:\n\n" + "\n".join(overdue)
             messagebox.showwarning("Überfällige Wartungen", msg, parent=self.root)
 
@@ -991,6 +1005,7 @@ class MainApp:
             )
             return
         gid = int(selected[0])
+        # NFA05: Fehlerbehandlung (Sicherheitsabfrage vor destruktiven Datenbankeingriffen)
         if messagebox.askyesno(
             "Löschen bestätigen",
             f"Soll das Gerät (ID {gid}) und alle zugehörigen Serviceeinträge wirklich gelöscht werden?",
